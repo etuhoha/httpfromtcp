@@ -1,54 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
+
+	"github.com/etuhoha/httpfromtcp/internal/request"
 )
-
-const READ_SIZE = 8
-
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	ch := make(chan string)
-
-	go func() {
-		defer close(ch)
-		defer f.Close()
-
-		data := make([]byte, READ_SIZE)
-
-		cur_line := ""
-		for {
-			n, err := f.Read(data)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				log.Printf("error reading file: %v\n", err)
-				return
-			}
-
-			chunk := string(data[:n])
-			chunks := strings.Split(chunk, "\n")
-
-			for _, c := range chunks[:len(chunks)-1] {
-				ch <- cur_line + c
-				cur_line = ""
-			}
-
-			cur_line += chunks[len(chunks)-1]
-		}
-
-		if len(cur_line) > 0 {
-			ch <- cur_line
-		}
-	}()
-
-	return ch
-}
 
 func main() {
 	listener, err := net.Listen("tcp", "127.0.0.1:42069")
@@ -65,10 +23,15 @@ func main() {
 
 		fmt.Println("Connection accepted!")
 
-		ch := getLinesChannel(conn)
-		for line := range ch {
-			fmt.Printf("%v\n", line)
+		request, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Fatalf("error parsing request: %v", err)
 		}
+
+		fmt.Printf("Request line:\n")
+		fmt.Printf("- Method: %v\n", request.RequestLine.Method)
+		fmt.Printf("- Target: %v\n", request.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %v\n", request.RequestLine.HttpVersion)
 
 		fmt.Println("Connection closed.")
 	}
