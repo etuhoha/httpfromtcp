@@ -26,7 +26,7 @@ const (
 	Done
 )
 
-const BUFFER_SIZE = 80
+const BUFFER_SIZE = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	// fmt.Printf("START\n")
