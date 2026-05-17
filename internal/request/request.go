@@ -35,6 +35,13 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, BUFFER_SIZE)
 	readN := 0
 	for result.parseStatus != Done {
+		if readN == len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
+			// fmt.Printf("resizing to size %v, new buf: %q\n", len(buf), string(buf[:readN]))
+		}
+
 		n, err := reader.Read(buf[readN:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -59,11 +66,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			copy(buf, buf[parsedN:readN])
 			readN -= parsedN
 			// fmt.Printf("PARSED %v, new buf: %q\n", parsedN, string(buf[:readN]))
-		} else if readN == len(buf) {
-			newBuf := make([]byte, len(buf)*2)
-			copy(newBuf, buf)
-			buf = newBuf
-			// fmt.Printf("resizing to size %v, new buf: %q\n", len(buf), string(buf[:readN]))
 		}
 	}
 
