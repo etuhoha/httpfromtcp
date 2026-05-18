@@ -15,6 +15,10 @@ func NewHeaders() Headers {
 
 const crlf = "\r\n"
 
+func (h Headers) Get(key string) string {
+	return h[strings.ToLower(key)]
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx < 0 { // not enough data

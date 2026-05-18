@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/etuhoha/httpfromtcp/internal/headers"
@@ -13,6 +14,7 @@ import (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	parseStatus parseStatus
 }
 
@@ -27,6 +29,7 @@ type parseStatus int
 const (
 	Init = iota
 	Header
+	Body
 	Done
 )
 
@@ -100,10 +103,26 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 
 		if done {
-			r.parseStatus = Done
+			r.parseStatus = Body
 		}
 
 		return parsedN, nil
+	case Body:
+		bodySize, err := parseBodySize(r.Headers)
+		fmt.Printf("BSize %v, new buf: %q\n", bodySize, string(data))
+		if err != nil {
+			return 0, err
+		}
+
+		if bodySize == 0 || len(data) >= bodySize {
+			r.Body = make([]byte, bodySize)
+			copy(r.Body, data)
+			fmt.Printf("BSize FIT! body: %q\n", string(r.Body))
+			r.parseStatus = Done
+			return bodySize, nil
+		}
+
+		return 0, nil
 	case Done:
 		return 0, fmt.Errorf("unexpected parse in Done state")
 	default:
@@ -111,6 +130,20 @@ func (r *Request) parse(data []byte) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func parseBodySize(headers headers.Headers) (int, error) {
+	sizeStr, ok := headers["content-length"]
+	if !ok {
+		return 0, nil
+	}
+
+	size, err := strconv.Atoi(sizeStr)
+	if err != nil {
+		return 0, err
+	}
+
+	return size, nil
 }
 
 func parseRequestLine(data []byte) (int, RequestLine, error) {
