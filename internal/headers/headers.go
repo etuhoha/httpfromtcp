@@ -40,6 +40,9 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	value := strings.TrimSpace(comps[1])
 
+	if prev, ok := h[name]; ok {
+		value = prev + ", " + value
+	}
 	h[name] = value
 	return crlfIdx + 2, false, nil
 }

@@ -91,6 +91,22 @@ func TestHeaders(t *testing.T) {
 	assert.Equal(t, 2, n)
 	assert.True(t, done)
 
+	// Test: Valid multiple instances of the same name
+	headers = NewHeaders()
+	headers["set-person"] = "lane-loves-go"
+	data = []byte("Set-Person: prime-loves-zig\r\nHost:localhost:42069\r\nSet-Person: tj-loves-ocaml\r\n\r\n")
+	n1, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	n2, done, err = headers.Parse(data[n1:])
+	require.NoError(t, err)
+	n3, done, err = headers.Parse(data[n1+n2:])
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "localhost:42069", headers["host"])
+	assert.Equal(t, "lane-loves-go, prime-loves-zig, tj-loves-ocaml", headers["set-person"])
+	assert.Equal(t, 79, n1+n2+n3)
+	assert.False(t, done)
+
 	// Test: Invalid no separator header
 	headers = NewHeaders()
 	data = []byte("Host localhost\r\n\r\n")
