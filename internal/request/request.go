@@ -6,10 +6,13 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"github.com/etuhoha/httpfromtcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	parseStatus parseStatus
 }
 
@@ -23,6 +26,7 @@ type parseStatus int
 
 const (
 	Init = iota
+	Header
 	Done
 )
 
@@ -31,9 +35,11 @@ const BUFFER_SIZE = 8
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	// fmt.Printf("START\n")
 	result := Request{parseStatus: Init}
+	result.Headers = headers.NewHeaders()
 
 	buf := make([]byte, BUFFER_SIZE)
 	readN := 0
+	lastParsed := false
 	for result.parseStatus != Done {
 		if readN == len(buf) {
 			newBuf := make([]byte, len(buf)*2)
@@ -45,7 +51,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readN:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if n == 0 {
+				if !lastParsed {
 					// fmt.Printf("unexpected EOF\n")
 					return nil, fmt.Errorf("unexpected EOF: %v", err)
 				}
@@ -62,7 +68,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 
+		lastParsed = false
 		if parsedN != 0 {
+			lastParsed = true
 			copy(buf, buf[parsedN:readN])
 			readN -= parsedN
 			// fmt.Printf("PARSED %v, new buf: %q\n", parsedN, string(buf[:readN]))
@@ -82,9 +90,20 @@ func (r *Request) parse(data []byte) (int, error) {
 
 		if parsedN > 0 {
 			r.RequestLine = reqLine
-			r.parseStatus = Done
+			r.parseStatus = Header
 			return parsedN, nil
 		}
+	case Header:
+		parsedN, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+
+		if done {
+			r.parseStatus = Done
+		}
+
+		return parsedN, nil
 	case Done:
 		return 0, fmt.Errorf("unexpected parse in Done state")
 	default:
