@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -31,13 +32,32 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	name := comps[0]
-	trimmedName := strings.TrimSpace(name)
-	if len(name) != len(trimmedName) {
-		return 0, false, fmt.Errorf("Unexpected spaces around header name: %q", name)
+	err = validateHeaderName(name)
+	if err != nil {
+		return 0, false, err
 	}
+	name = strings.ToLower(name)
 
 	value := strings.TrimSpace(comps[1])
 
 	h[name] = value
 	return crlfIdx + 2, false, nil
+}
+
+func validateHeaderName(name string) error {
+	trimmedName := strings.TrimSpace(name)
+	if len(name) != len(trimmedName) {
+		return fmt.Errorf("Unexpected spaces around header name: %q", name)
+	}
+
+	ok, err := regexp.MatchString("^[a-zA-Z0-9!#\\$%&'\\*\\+-\\.\\^_`|~]+$", name)
+	if err != nil {
+		return err
+	}
+
+	if !ok {
+		return fmt.Errorf("Unexpected characters in header name: %q", name)
+	}
+
+	return nil
 }
