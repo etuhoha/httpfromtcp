@@ -1,43 +1,69 @@
 package main
 
 import (
-	"io"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/etuhoha/httpfromtcp/internal/headers"
 	"github.com/etuhoha/httpfromtcp/internal/request"
+	"github.com/etuhoha/httpfromtcp/internal/response"
 	"github.com/etuhoha/httpfromtcp/internal/server"
 )
 
 const port = 42069
 
+const htmlTemplate = `<html>
+  <head>
+    <title>%d %s</title>
+  </head>
+  <body>
+    <h1>%s</h1>
+    <p>%s</p>
+  </body>
+</html>
+`
+
 func main() {
-	server, err := server.Serve(port, func(w io.Writer, req *request.Request) *server.HandlerError {
-		if req.RequestLine.RequestTarget == "/yourproblem" {
-			return &server.HandlerError{StatusCode: 400, Message: "Your problem is not my problem\n"}
+	server, err := server.Serve(port, func(w *response.ResponseWriter, req *request.Request) {
+		statusCode := response.StatusCode(response.StatusOK)
+		title := "Success!"
+		text := "Your request was an absolute banger."
+
+		switch req.RequestLine.RequestTarget {
+		case "/yourproblem":
+			statusCode = 400
+			title = "Bad Request"
+			text = "Your request honestly kinda sucked."
+		case "/myproblem":
+			statusCode = 500
+			title = "Internal Server Error"
+			text = "Okay, you know what? This one is on me."
 		}
 
-		if req.RequestLine.RequestTarget == "/myproblem" {
-			return &server.HandlerError{StatusCode: 500, Message: "Woopsie, my bad\n"}
-		}
+		msg := fmt.Sprintf(htmlTemplate, statusCode, response.StatusCodeReason(statusCode), title, text)
+		w.WriteStatusLine(statusCode)
 
-		_, err := w.Write([]byte("All good, frfr\n"))
-		if err != nil {
-			return &server.HandlerError{StatusCode: 500, Message: err.Error()}
-		}
-		return nil
+		headers := headers.NewHeaders()
+		headers.Set("Content-Type", "text/html")
+		headers.Set("Content-Length", fmt.Sprintf("%d", len(msg)))
+		headers.Set("Connection", "close")
+		w.WriteHeaders(headers)
+
+		w.WriteBody([]byte(msg))
 	})
 
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
-	defer server.Close()
 	log.Println("Server started on port", port)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
+
+	server.Close()
 	log.Println("Server gracefully stopped")
 }
