@@ -22,7 +22,7 @@ type HandlerError struct {
 	Message    string
 }
 
-type Handler func(w *response.ResponseWriter, req *request.Request)
+type Handler func(w *response.Writer, req *request.Request)
 
 func Serve(port int, hanler Handler) (*Server, error) {
 	server := &Server{handler: hanler, closed: atomic.Bool{}}
@@ -64,11 +64,7 @@ func (s *Server) handle(conn net.Conn) {
 
 	request, err := request.RequestFromReader(conn)
 	if err != nil {
-		resWriter.WriteStatusLine(400)
-		errMsg := err.Error()
-		headers := response.GetDefaultHeaders(len(errMsg))
-		resWriter.WriteHeaders(headers)
-		resWriter.WriteBody([]byte(errMsg))
+		resWriter.WriteError(400, err)
 		return
 	} else {
 		s.handler(resWriter, request)

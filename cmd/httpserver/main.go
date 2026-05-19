@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/etuhoha/httpfromtcp/internal/request"
@@ -25,8 +29,19 @@ const htmlTemplate = `<html>
 </html>
 `
 
+const httpBinPrefix = "/httpbin"
+
 func main() {
-	server, err := server.Serve(port, func(w *response.ResponseWriter, req *request.Request) {
+	server, err := server.Serve(port, func(w *response.Writer, req *request.Request) {
+		reqTarget := req.RequestLine.RequestTarget
+		if after, ok := strings.CutPrefix(reqTarget, httpBinPrefix); ok {
+			err := handleHttpBin(w, after)
+			if err != nil {
+				w.WriteError(500, err)
+			}
+			return
+		}
+
 		statusCode := response.StatusCode(response.StatusOK)
 		title := "Success!"
 		text := "Your request was an absolute banger."
@@ -63,4 +78,44 @@ func main() {
 
 	server.Close()
 	log.Println("Server gracefully stopped")
+}
+
+func handleHttpBin(w *response.Writer, target string) error {
+	resp, err := http.Get("https://httpbin.org/" + target)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("could not get a proper result from httpbin.org, original status: %q", resp.Status)
+	}
+
+	w.WriteStatusLine(200)
+
+	headers := response.GetDefaultHeaders(0)
+	headers.Remove("Content-Length", "")
+	headers.Set("Transfer-Encoding", "chunked")
+	w.WriteHeaders(headers)
+
+	reader := resp.Body
+
+	buf := make([]byte, 32)
+	for {
+		n, err := reader.Read(buf)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		if n == 0 {
+			break
+		}
+
+		w.WriteChunkedBody(buf[:n])
+	}
+
+	w.WriteChunkedBodyDone()
+	return nil
 }

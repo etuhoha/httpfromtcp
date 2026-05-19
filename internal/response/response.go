@@ -24,7 +24,7 @@ const (
 	WriteStateBody
 )
 
-type ResponseWriter struct {
+type Writer struct {
 	writer     io.Writer
 	writeState writeState
 }
@@ -42,7 +42,15 @@ func StatusCodeReason(statusCode StatusCode) string {
 	return reasonPhrase
 }
 
-func (w *ResponseWriter) WriteStatusLine(statusCode StatusCode) error {
+func (w *Writer) WriteError(statusCode StatusCode, err error) {
+	w.WriteStatusLine(400)
+	errMsg := err.Error()
+	headers := GetDefaultHeaders(len(errMsg))
+	w.WriteHeaders(headers)
+	w.WriteBody([]byte(errMsg))
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	if w.writeState != WriteStateStatusLine {
 		return fmt.Errorf("unexpected status line, expected: %v", writeStateString(w.writeState))
 	}
@@ -62,7 +70,7 @@ func (w *ResponseWriter) WriteStatusLine(statusCode StatusCode) error {
 	return nil
 }
 
-func (w *ResponseWriter) WriteHeaders(headers headers.Headers) error {
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	if w.writeState != WriteStateHeaders {
 		return fmt.Errorf("unexpected headers, expected: %v", writeStateString(w.writeState))
 	}
@@ -83,7 +91,7 @@ func (w *ResponseWriter) WriteHeaders(headers headers.Headers) error {
 	return nil
 }
 
-func (w *ResponseWriter) WriteBody(body []byte) error {
+func (w *Writer) WriteBody(body []byte) error {
 	if w.writeState != WriteStateBody {
 		return fmt.Errorf("unexpected body, expected: %v", writeStateString(w.writeState))
 	}
@@ -96,6 +104,31 @@ func (w *ResponseWriter) WriteBody(body []byte) error {
 	return nil
 }
 
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	chunkLen := len(p)
+	chunckLenStr := strconv.FormatInt(int64(chunkLen), 16)
+
+	n1, err := w.writer.Write([]byte(chunckLenStr + "\r\n"))
+	if err != nil {
+		return 0, err
+	}
+
+	n2, err := w.writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+
+	n3, err := w.writer.Write([]byte("\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	return n1 + n2 + n3, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	return w.WriteChunkedBody([]byte{})
+}
+
 func GetDefaultHeaders(contentLen int) headers.Headers {
 	result := headers.NewHeaders()
 	result.Set("Content-Length", strconv.FormatInt(int64(contentLen), 10))
@@ -104,8 +137,8 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	return result
 }
 
-func NewResponseWriter(w io.Writer) *ResponseWriter {
-	return &ResponseWriter{writer: w, writeState: WriteStateStatusLine}
+func NewResponseWriter(w io.Writer) *Writer {
+	return &Writer{writer: w, writeState: WriteStateStatusLine}
 }
 
 func writeStateString(ws writeState) string {
