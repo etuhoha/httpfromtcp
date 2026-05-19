@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/etuhoha/httpfromtcp/internal/headers"
 	"github.com/etuhoha/httpfromtcp/internal/request"
 	"github.com/etuhoha/httpfromtcp/internal/response"
 	"github.com/etuhoha/httpfromtcp/internal/server"
@@ -92,12 +94,16 @@ func handleHttpBin(w *response.Writer, target string) error {
 
 	w.WriteStatusLine(200)
 
-	headers := response.GetDefaultHeaders(0)
-	headers.Remove("Content-Length", "")
-	headers.Set("Transfer-Encoding", "chunked")
-	w.WriteHeaders(headers)
+	hdrs := response.GetDefaultHeaders(0)
+	hdrs.Remove("Content-Length", "")
+	hdrs.Set("Transfer-Encoding", "chunked")
+	hdrs.Set("Trailer", "X-Content-Length")
+	hdrs.Set("Trailer", "X-Content-SHA256")
+	w.WriteHeaders(hdrs)
 
 	reader := resp.Body
+
+	body := make([]byte, 0)
 
 	buf := make([]byte, 32)
 	for {
@@ -113,9 +119,16 @@ func handleHttpBin(w *response.Writer, target string) error {
 			break
 		}
 
+		body = append(body, buf[:n]...)
+
 		w.WriteChunkedBody(buf[:n])
 	}
 
-	w.WriteChunkedBodyDone()
+	sha := sha256.Sum256(body)
+
+	trailHdrs := headers.NewHeaders()
+	trailHdrs.Set("X-Content-Length", fmt.Sprintf("%d", len(body)))
+	trailHdrs.Set("X-Content-SHA256", fmt.Sprintf("%x", sha))
+	w.WriteChunkedBodyDone(&trailHdrs)
 	return nil
 }

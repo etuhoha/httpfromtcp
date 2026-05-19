@@ -22,6 +22,8 @@ const (
 	WriteStateStatusLine = iota
 	WriteStateHeaders
 	WriteStateBody
+	WriteStateTrailer
+	WriteStateDone
 )
 
 type Writer struct {
@@ -70,11 +72,7 @@ func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	return nil
 }
 
-func (w *Writer) WriteHeaders(headers headers.Headers) error {
-	if w.writeState != WriteStateHeaders {
-		return fmt.Errorf("unexpected headers, expected: %v", writeStateString(w.writeState))
-	}
-
+func (w *Writer) WriteHeadersRaw(headers headers.Headers) error {
 	for k, v := range headers {
 		hStr := fmt.Sprintf("%s: %s\r\n", k, v)
 		_, err := w.writer.Write([]byte(hStr))
@@ -83,6 +81,19 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 		}
 	}
 	_, err := w.writer.Write([]byte("\r\n"))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	if w.writeState != WriteStateHeaders {
+		return fmt.Errorf("unexpected headers, expected: %v", writeStateString(w.writeState))
+	}
+
+	err := w.WriteHeadersRaw(headers)
 	if err != nil {
 		return err
 	}
@@ -101,10 +112,15 @@ func (w *Writer) WriteBody(body []byte) error {
 		return err
 	}
 
+	w.writeState = WriteStateDone
 	return nil
 }
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.writeState != WriteStateBody {
+		return 0, fmt.Errorf("unexpected body, expected: %v", writeStateString(w.writeState))
+	}
+
 	chunkLen := len(p)
 	chunckLenStr := strconv.FormatInt(int64(chunkLen), 16)
 
@@ -122,11 +138,35 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	w.writeState = WriteStateTrailer
 	return n1 + n2 + n3, nil
 }
 
-func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	return w.WriteChunkedBody([]byte{})
+func (w *Writer) WriteChunkedBodyDone(trailHdrs *headers.Headers) error {
+	if w.writeState != WriteStateTrailer {
+		return fmt.Errorf("unexpected trailers, expected: %v", writeStateString(w.writeState))
+	}
+
+	_, err := w.writer.Write([]byte("0\r\n"))
+	if err != nil {
+		return err
+	}
+
+	if trailHdrs != nil {
+		err = w.WriteHeadersRaw(*trailHdrs)
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err = w.writer.Write([]byte("\r\n"))
+		if err != nil {
+			return err
+		}
+	}
+
+	w.writeState = WriteStateDone
+	return nil
 }
 
 func GetDefaultHeaders(contentLen int) headers.Headers {
