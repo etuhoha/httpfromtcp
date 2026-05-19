@@ -42,7 +42,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	buf := make([]byte, BUFFER_SIZE)
 	readN := 0
-	lastParsed := false
 	for result.parseStatus != Done {
 		if readN == len(buf) {
 			newBuf := make([]byte, len(buf)*2)
@@ -54,10 +53,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readN:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if !lastParsed {
-					// fmt.Printf("unexpected EOF\n")
-					return nil, fmt.Errorf("unexpected EOF: %v", err)
-				}
+				// fmt.Printf("unexpected EOF\n")
+				return nil, fmt.Errorf("unexpected EOF: %v", err)
 			} else {
 				return nil, err
 			}
@@ -65,18 +62,22 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		readN += n
 		// fmt.Printf("read %v, new buf: %q\n", n, string(buf[:readN]))
 
-		parsedN, err := result.parse(buf[:readN])
-		if err != nil {
-			// fmt.Printf("ERR: %v\n", err)
-			return nil, err
-		}
+		for {
+			parsedN, err := result.parse(buf[:readN])
+			if err != nil {
+				// fmt.Printf("ERR: %v\n", err)
+				return nil, err
+			}
 
-		lastParsed = false
-		if parsedN != 0 {
-			lastParsed = true
-			copy(buf, buf[parsedN:readN])
-			readN -= parsedN
-			// fmt.Printf("PARSED %v, new buf: %q\n", parsedN, string(buf[:readN]))
+			if parsedN != 0 {
+				copy(buf, buf[parsedN:readN])
+				readN -= parsedN
+				// fmt.Printf("PARSED %v, new buf: %q\n", parsedN, string(buf[:readN]))
+			}
+
+			if result.parseStatus == Done || parsedN == 0 {
+				break
+			}
 		}
 	}
 
@@ -109,7 +110,7 @@ func (r *Request) parse(data []byte) (int, error) {
 		return parsedN, nil
 	case Body:
 		bodySize, err := parseBodySize(r.Headers)
-		fmt.Printf("BSize %v, new buf: %q\n", bodySize, string(data))
+		// fmt.Printf("BSize %v, new buf: %q\n", bodySize, string(data))
 		if err != nil {
 			return 0, err
 		}
@@ -117,7 +118,7 @@ func (r *Request) parse(data []byte) (int, error) {
 		if bodySize == 0 || len(data) >= bodySize {
 			r.Body = make([]byte, bodySize)
 			copy(r.Body, data)
-			fmt.Printf("BSize FIT! body: %q\n", string(r.Body))
+			// fmt.Printf("BSize FIT! body: %q\n", string(r.Body))
 			r.parseStatus = Done
 			return bodySize, nil
 		}
