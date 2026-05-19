@@ -27,6 +27,11 @@ func (h Headers) Set(key string, value string) {
 	h[key] = value
 }
 
+func (h Headers) Override(key string, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx < 0 { // not enough data

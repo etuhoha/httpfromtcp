@@ -49,7 +49,7 @@ func (s *Server) listen() {
 				return
 			}
 
-			fmt.Printf("error acceptong connection: %v\n", err)
+			fmt.Printf("error accepting connection: %v\n", err)
 			continue
 		}
 
