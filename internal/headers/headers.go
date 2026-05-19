@@ -19,6 +19,14 @@ func (h Headers) Get(key string) string {
 	return h[strings.ToLower(key)]
 }
 
+func (h Headers) Set(key string, value string) {
+	key = strings.ToLower(key)
+	if v, ok := h[key]; ok {
+		value = v + ", " + value
+	}
+	h[key] = value
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx < 0 { // not enough data
@@ -44,10 +52,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	value := strings.TrimSpace(comps[1])
 
-	if prev, ok := h[name]; ok {
-		value = prev + ", " + value
-	}
-	h[name] = value
+	h.Set(name, value)
 	return crlfIdx + 2, false, nil
 }
 

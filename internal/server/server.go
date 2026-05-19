@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+
+	"github.com/etuhoha/httpfromtcp/internal/response"
 )
 
 type Server struct {
@@ -47,24 +49,15 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	// request, err := request.RequestFromReader(conn)
-	// if err != nil {
-	// 	if s.closed.Load() {
-	// 		return
-	// 	}
 
-	// 	log.Printf("error reading request: %v", err)
-	// 	return
-	// }
-
-	// request
-	resp := `HTTP/1.1 200 OK
-Content-Type: text/plain
-Content-Length: 13
-
-Hello World!`
-
-	conn.Write([]byte(resp))
+	err := response.WriteStatusLine(conn, 200)
+	if err != nil {
+		fmt.Printf("error writing status: %v", err)
+	}
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(0))
+	if err != nil {
+		fmt.Printf("error writing headers: %v", err)
+	}
 }
 
 func (s *Server) Close() error {
