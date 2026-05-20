@@ -22,7 +22,6 @@ const (
 	WriteStateStatusLine = iota
 	WriteStateHeaders
 	WriteStateBody
-	WriteStateTrailer
 	WriteStateDone
 )
 
@@ -139,12 +138,11 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 		return 0, err
 	}
 
-	w.writeState = WriteStateTrailer
 	return n1 + n2 + n3, nil
 }
 
 func (w *Writer) WriteChunkedBodyDone(trailHdrs *headers.Headers) error {
-	if w.writeState != WriteStateTrailer {
+	if w.writeState != WriteStateBody {
 		return fmt.Errorf("unexpected trailers, expected: %v", writeStateString(w.writeState))
 	}
 

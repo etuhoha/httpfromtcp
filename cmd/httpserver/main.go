@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -31,13 +32,23 @@ const htmlTemplate = `<html>
 </html>
 `
 
-const httpBinPrefix = "/httpbin"
+const HTTPBIN_PREFIX = "/httpbin"
+
+const BUFFER_SIZE = 1024
 
 func main() {
 	server, err := server.Serve(port, func(w *response.Writer, req *request.Request) {
 		reqTarget := req.RequestLine.RequestTarget
-		if after, ok := strings.CutPrefix(reqTarget, httpBinPrefix); ok {
+		if after, ok := strings.CutPrefix(reqTarget, HTTPBIN_PREFIX); ok {
 			err := handleHttpBin(w, after)
+			if err != nil {
+				w.WriteError(500, err)
+			}
+			return
+		}
+
+		if reqTarget == "/video" {
+			err := handleVideo(w)
 			if err != nil {
 				w.WriteError(500, err)
 			}
@@ -82,6 +93,22 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
+func handleVideo(w *response.Writer) error {
+	data, err := os.ReadFile("./assets/vim.mp4")
+	if err != nil {
+		return err
+	}
+
+	hdrs := response.GetDefaultHeaders(0)
+	hdrs.Remove("Content-Length")
+	hdrs.Set("Transfer-Encoding", "chunked")
+	hdrs.Set("Trailer", "X-Content-Length")
+	hdrs.Set("Trailer", "X-Content-SHA256")
+	w.WriteHeaders(hdrs)
+
+	return handleChunked(w, bytes.NewReader(data), "video/mp4")
+}
+
 func handleHttpBin(w *response.Writer, target string) error {
 	resp, err := http.Get("https://httpbin.org/" + target)
 	if err != nil {
@@ -92,20 +119,25 @@ func handleHttpBin(w *response.Writer, target string) error {
 		return fmt.Errorf("could not get a proper result from httpbin.org, original status: %q", resp.Status)
 	}
 
+	respBody := resp.Body
+	defer respBody.Close()
+	return handleChunked(w, respBody, "application/json")
+}
+
+func handleChunked(w *response.Writer, reader io.Reader, contentType string) error {
 	w.WriteStatusLine(200)
 
 	hdrs := response.GetDefaultHeaders(0)
-	hdrs.Remove("Content-Length", "")
+	hdrs.Remove("Content-Length")
+	hdrs.Override("Content-Type", contentType)
 	hdrs.Set("Transfer-Encoding", "chunked")
 	hdrs.Set("Trailer", "X-Content-Length")
 	hdrs.Set("Trailer", "X-Content-SHA256")
 	w.WriteHeaders(hdrs)
 
-	reader := resp.Body
-
 	body := make([]byte, 0)
 
-	buf := make([]byte, 32)
+	buf := make([]byte, BUFFER_SIZE)
 	for {
 		n, err := reader.Read(buf)
 		if err != nil {
@@ -121,7 +153,10 @@ func handleHttpBin(w *response.Writer, target string) error {
 
 		body = append(body, buf[:n]...)
 
-		w.WriteChunkedBody(buf[:n])
+		_, err = w.WriteChunkedBody(buf[:n])
+		if err != nil {
+			return err
+		}
 	}
 
 	sha := sha256.Sum256(body)

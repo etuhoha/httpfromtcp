@@ -32,7 +32,7 @@ func (h Headers) Override(key string, value string) {
 	h[key] = value
 }
 
-func (h Headers) Remove(key string, value string) {
+func (h Headers) Remove(key string) {
 	key = strings.ToLower(key)
 	delete(h, key)
 }
